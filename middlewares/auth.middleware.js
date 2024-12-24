@@ -3,7 +3,9 @@ const dotenv = require("dotenv");
 dotenv.config();
 
 const authMiddleware = (req, res, next) => {
-  const token = req.headers.authorization || req.cookies.token; // check for auth token
+  const token = req.cookies.token || req.headers.authorization.split(" ")[1];
+
+  // check for auth token
   if (!token) {
     return res.status(401).json({ message: "This action is not allowed" });
   }
