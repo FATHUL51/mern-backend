@@ -95,52 +95,36 @@ router.get("/setting", authMiddleware, async (req, res) => {
 });
 
 // Update user details
+
+// Update user settings
 router.put("/update", authMiddleware, async (req, res) => {
-  const { username, email, password } = req.body;
+  const { username, email, oldpassword, password } = req.body;
 
   try {
-    const updates = { username, email };
+    const user = await User.findById(req.user.id).select("password");
+    if (!user) return res.status(404).send("User not found");
 
-    if (password) {
-      const saltRounds = 10;
-      updates.password = await bcrypt.hash(password, saltRounds);
+    // Check if the old password matches
+    if (oldpassword && password) {
+      const isMatch = await bcrypt.compare(oldpassword, user.password);
+      if (!isMatch) return res.status(400).send("Old password is incorrect");
+
+      // Hash new password if it's provided
+      const hashedPassword = await bcrypt.hash(password, 10);
+      user.password = hashedPassword;
     }
 
-    const user = await User.findByIdAndUpdate(req.user.id, updates, {
-      new: true,
-    });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    // Update username and email
+    if (username) user.username = username;
+    if (email) user.email = email;
 
-    res.status(200).json({ message: "User updated successfully" });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
-router.put("/update", authMiddleware, async (req, res) => {
-  const { username, email, password } = req.body;
-
-  try {
-    const updates = { username, email };
-
-    if (password) {
-      const saltRounds = 10;
-      updates.password = await bcrypt.hash(password, saltRounds);
-    }
-
-    const user = await User.findByIdAndUpdate(req.user.id, updates, {
-      new: true,
-    });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    res.status(200).json({ message: "User updated successfully" });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Internal server error" });
+    await user.save();
+    res
+      .status(200)
+      .send({ message: "User settings updated successfully", user });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server error");
   }
 });
 
@@ -162,11 +146,9 @@ router.post("/folder", authMiddleware, async (req, res) => {
       user: req.user.id,
     });
     if (existingFolder) {
-      return res
-        .status(400)
-        .json({
-          message: "Folder name already exists. Please choose another name.",
-        });
+      return res.status(400).json({
+        message: "Folder name already exists. Please choose another name.",
+      });
     }
 
     // Create a new folder
