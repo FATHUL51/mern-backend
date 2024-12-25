@@ -5,7 +5,9 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const dotenv = require("dotenv");
 const authMiddleware = require("../middlewares/auth.middleware");
-const Folder = require("../models/userData.model");
+const Folder = require("../models/Folder.model");
+const File = require("../models/FileCreate.model");
+const Form = require("../models/Formcreate.mongoose");
 const { header } = require("express-validator");
 
 dotenv.config();
@@ -148,42 +150,81 @@ router.post("/folder", authMiddleware, async (req, res) => {
   const { foldername } = req.body;
 
   try {
+    // Check if the user exists
     const user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
+
+    // Check if a folder with the same name already exists for the user
+    const existingFolder = await Folder.findOne({
+      foldername,
+      user: req.user.id,
+    });
+    if (existingFolder) {
+      return res
+        .status(400)
+        .json({
+          message: "Folder name already exists. Please choose another name.",
+        });
+    }
+
     // Create a new folder
-    const folders = await Folder.create({
+    const newFolder = await Folder.create({
       foldername,
       user: req.user.id,
     });
 
-    res.status(201).json({ message: "Folder created successfully", folders });
+    res
+      .status(201)
+      .json({ message: "Folder created successfully", folder: newFolder });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Internal server error" });
+
+    // Return a generic error message with error details during development
+    res
+      .status(500)
+      .json({ message: "Internal server error", error: error.message });
   }
 });
+
 router.post("/folder/file", authMiddleware, async (req, res) => {
   const { filename } = req.body;
 
   try {
+    // Check if filename already exists
+    const existingFile = await File.findOne({ filename });
+    if (existingFile) {
+      return res.status(400).json({
+        message: "Filename already exists. Please choose another name.",
+      });
+    }
+
+    // Check if the user exists
     const user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    // Create a new folder
-    const files = await Folder.create({
+
+    // Create a new file entry
+    const newFile = await File.create({
       filename,
       user: req.user.id,
     });
 
-    res.status(201).json({ message: "Folder created successfully", files });
+    res
+      .status(201)
+      .json({ message: "File created successfully", file: newFile });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Internal server error" });
+
+    // Return detailed error for debugging during development
+    res
+      .status(500)
+      .json({ message: "Internal server error", error: error.message });
   }
 });
+
 router.post("/folder/file/form", authMiddleware, async (req, res) => {
   const { bubble, text, image, number, email, phone, rating, button } =
     req.body;
@@ -194,7 +235,7 @@ router.post("/folder/file/form", authMiddleware, async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
     // Create a new folder
-    const form = await Folder.create({
+    const form = await Form.create({
       bubble,
       text,
       image,
@@ -230,7 +271,7 @@ router.get("/folders/file", authMiddleware, async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    const file = await Folder.find({ user: req.user.id });
+    const file = await File.find({ user: req.user.id });
 
     res.status(200).json({ file });
   } catch (error) {}
@@ -269,11 +310,7 @@ router.delete("/file/:id", authMiddleware, async (req, res) => {
   try {
     const fileId = req.params.id;
 
-    const deletedFile = await Folder.findOneAndUpdate(
-      { _id: fileId, filename: { $exists: true } }, // Ensure it's a file
-      { $unset: { filename: "" } }, // Remove the filename field
-      { new: true }
-    );
+    const deletedFile = await File.findOneAndDelete(fileId);
 
     if (!deletedFile) {
       return res.status(404).json({ message: "File not found" });

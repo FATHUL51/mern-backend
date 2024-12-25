@@ -1,10 +1,7 @@
 const mongoose = require("mongoose");
 
-const FolderSchema = new mongoose.Schema({
-  foldername: {
-    type: String,
-  },
-  filename: {
+const FormSchema = new mongoose.Schema({
+  bubble: {
     type: String,
   },
   text: {
@@ -29,11 +26,15 @@ const FolderSchema = new mongoose.Schema({
   button: {
     type: String,
   },
+  file: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "file",
+  },
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "user",
   },
 });
 
-const Folder = mongoose.model("folder", FolderSchema);
-module.exports = Folder;
+const Form = mongoose.model("form", FormSchema);
+module.exports = Form;
