@@ -4,7 +4,7 @@ const FormSchema = new mongoose.Schema({
   formname: {
     type: String,
   },
-  bubble: {
+  bubble_text: {
     type: String,
   },
   text: {

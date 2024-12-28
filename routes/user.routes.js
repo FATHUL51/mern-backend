@@ -211,7 +211,7 @@ router.post("/folder/file", authMiddleware, async (req, res) => {
 router.post("/folder/:file/form", authMiddleware, async (req, res) => {
   const {
     formname,
-    bubble,
+    bubble_text,
     text,
     image,
     number,
@@ -238,7 +238,7 @@ router.post("/folder/:file/form", authMiddleware, async (req, res) => {
     // Create a new form and associate it with the file
     const form = await Form.create({
       formname,
-      bubble,
+      bubble_text,
       text,
       image,
       number,
