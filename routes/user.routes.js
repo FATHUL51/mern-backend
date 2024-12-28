@@ -279,17 +279,22 @@ router.get("/folders/file", authMiddleware, async (req, res) => {
     res.status(200).json({ file });
   } catch (error) {}
 });
-router.get("/folders/:file/form", authMiddleware, async (req, res) => {
+router.get("/folders/:fileId/form", async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    const { fileId } = req.params;
+    const form = await Form.find({ file: fileId }); // Fetch forms associated with the fileId
+
+    if (!form || form.length === 0) {
+      return res.status(404).json({ message: "No form found for this file." });
     }
-    const form = await Form.find({ user: req.user.id });
 
     res.status(200).json({ form });
-  } catch (error) {}
+  } catch (error) {
+    console.error("Error fetching form:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
 });
+
 router.delete("/folder/:id", authMiddleware, async (req, res) => {
   try {
     const folderId = req.params.id;
