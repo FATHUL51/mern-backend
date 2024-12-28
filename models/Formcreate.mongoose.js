@@ -1,6 +1,9 @@
 const mongoose = require("mongoose");
 
 const FormSchema = new mongoose.Schema({
+  formname: {
+    type: String,
+  },
   bubble: {
     type: String,
   },
@@ -18,6 +21,9 @@ const FormSchema = new mongoose.Schema({
   },
   phone: {
     type: String,
+  },
+  date: {
+    type: Date,
   },
   rating: {
     type: Number,

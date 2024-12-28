@@ -1,13 +1,14 @@
 const express = require("express");
 const router = express.Router();
-const User = require("../models/userCredentials.model");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const dotenv = require("dotenv");
 const authMiddleware = require("../middlewares/auth.middleware");
 const Folder = require("../models/Folder.model");
 const File = require("../models/FileCreate.model");
 const Form = require("../models/Formcreate.mongoose");
+const User = require("../models/userCredentials.model");
+const ShareableProfile = require("../models/ShareableProfile.model");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const dotenv = require("dotenv");
 const { header } = require("express-validator");
 
 dotenv.config();
@@ -207,17 +208,36 @@ router.post("/folder/file", authMiddleware, async (req, res) => {
   }
 });
 
-router.post("/folder/file/form", authMiddleware, async (req, res) => {
-  const { bubble, text, image, number, email, phone, rating, button } =
-    req.body;
+router.post("/folder/:file/form", authMiddleware, async (req, res) => {
+  const {
+    formname,
+    bubble,
+    text,
+    image,
+    number,
+    email,
+    phone,
+    rating,
+    button,
+  } = req.body;
+  const { file } = req.params;
 
   try {
+    // Validate the user
     const user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    // Create a new folder
+
+    // Validate the file
+    const fileRecord = await File.findOne({ _id: file, user: req.user.id });
+    if (!fileRecord) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    // Create a new form and associate it with the file
     const form = await Form.create({
+      formname,
       bubble,
       text,
       image,
@@ -227,9 +247,10 @@ router.post("/folder/file/form", authMiddleware, async (req, res) => {
       rating,
       button,
       user: req.user.id,
+      file: fileRecord._id, // Linking form to file by file ID
     });
 
-    res.status(201).json({ message: "Folder created successfully", form });
+    res.status(201).json({ message: "Form created successfully", form });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal server error" });
@@ -258,13 +279,13 @@ router.get("/folders/file", authMiddleware, async (req, res) => {
     res.status(200).json({ file });
   } catch (error) {}
 });
-router.get("/folders/file/form", authMiddleware, async (req, res) => {
+router.get("/folders/:file/form", authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    const form = await Folder.find({ user: req.user.id });
+    const form = await Form.find({ user: req.user.id });
 
     res.status(200).json({ form });
   } catch (error) {}
@@ -302,6 +323,131 @@ router.delete("/file/:id", authMiddleware, async (req, res) => {
   } catch (error) {
     console.error("Error deleting file:", error);
     res.status(500).json({ message: "Internal server error" });
+  }
+});
+// routes/shareableProfile.routes.js
+
+// Create a shareable profile
+router.post("/create", authMiddleware, async (req, res) => {
+  const { profileName } = req.body;
+
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // Create a new shareable profile
+    const newProfile = new ShareableProfile({
+      user: req.user.id,
+      profileName,
+    });
+
+    await newProfile.save();
+    res.status(201).json({
+      message: "Shareable profile created successfully",
+      profile: newProfile,
+    });
+  } catch (error) {
+    console.error(error);
+    res
+      .status(500)
+      .json({ message: "Internal server error", error: error.message });
+  }
+});
+
+// Update a shareable profile (add folders/files)
+router.put("/update/:profileId", authMiddleware, async (req, res) => {
+  const { profileId } = req.params;
+  const { folderId, fileId } = req.body;
+
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // Find the shareable profile
+    const profile = await ShareableProfile.findById(profileId);
+    if (!profile) return res.status(404).json({ message: "Profile not found" });
+
+    // Ensure that the profile belongs to the current user
+    if (profile.user.toString() !== req.user.id) {
+      return res
+        .status(403)
+        .json({ message: "You are not authorized to update this profile" });
+    }
+
+    // Add folder or file to the profile if they exist
+    if (folderId) {
+      const folder = await Folder.findById(folderId);
+      if (!folder) return res.status(404).json({ message: "Folder not found" });
+      profile.folders.push(folderId);
+    }
+
+    if (fileId) {
+      const file = await File.findById(fileId);
+      if (!file) return res.status(404).json({ message: "File not found" });
+      profile.files.push(fileId);
+    }
+
+    await profile.save();
+    res.status(200).json({ message: "Profile updated successfully", profile });
+  } catch (error) {
+    console.error(error);
+    res
+      .status(500)
+      .json({ message: "Internal server error", error: error.message });
+  }
+});
+
+// View a shareable profile (read-only)
+router.get("/view/:profileId", async (req, res) => {
+  const { profileId } = req.params;
+
+  try {
+    // Find the shareable profile
+    const profile = await ShareableProfile.findById(profileId)
+      .populate("folders")
+      .populate("files");
+
+    if (!profile) return res.status(404).json({ message: "Profile not found" });
+
+    if (!profile.isPublic) {
+      return res.status(403).json({ message: "This profile is not shareable" });
+    }
+
+    res.status(200).json({ profile });
+  } catch (error) {
+    console.error(error);
+    res
+      .status(500)
+      .json({ message: "Internal server error", error: error.message });
+  }
+});
+
+// Delete a shareable profile
+router.delete("/delete/:profileId", authMiddleware, async (req, res) => {
+  const { profileId } = req.params;
+
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // Find and delete the shareable profile
+    const profile = await ShareableProfile.findById(profileId);
+    if (!profile) return res.status(404).json({ message: "Profile not found" });
+
+    // Ensure that the profile belongs to the current user
+    if (profile.user.toString() !== req.user.id) {
+      return res
+        .status(403)
+        .json({ message: "You are not authorized to delete this profile" });
+    }
+
+    await profile.remove();
+    res.status(200).json({ message: "Shareable profile deleted successfully" });
+  } catch (error) {
+    console.error(error);
+    res
+      .status(500)
+      .json({ message: "Internal server error", error: error.message });
   }
 });
 
