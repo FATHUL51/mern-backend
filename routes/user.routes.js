@@ -279,16 +279,29 @@ router.get("/folders/file", authMiddleware, async (req, res) => {
     res.status(200).json({ file });
   } catch (error) {}
 });
+
 router.get("/folders/:fileId/form", async (req, res) => {
   try {
     const { fileId } = req.params;
-    const form = await Form.find({ file: fileId }); // Fetch forms associated with the fileId
 
-    if (!form || form.length === 0) {
+    // Fetch forms sorted by creation time (latest first)
+    const forms = await Form.find({ file: fileId }).sort({ createdAt: -1 });
+
+    if (!forms || forms.length === 0) {
       return res.status(404).json({ message: "No form found for this file." });
     }
 
-    res.status(200).json({ form });
+    // Get the latest form
+    const latestForm = forms[0];
+
+    // Delete all older forms
+    const oldForms = forms.slice(1); // Exclude the latest form
+    for (const form of oldForms) {
+      await Form.findByIdAndDelete(form._id);
+    }
+
+    // Return the latest form
+    res.status(200).json({ form: latestForm });
   } catch (error) {
     console.error("Error fetching form:", error);
     res.status(500).json({ message: "Internal server error." });
@@ -313,92 +326,127 @@ router.delete("/folder/:id", authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
-// Delete a file by ID
-router.delete("/file/:id", authMiddleware, async (req, res) => {
+
+router.delete("/folders/:fileId/form/:componentName", async (req, res) => {
   try {
-    const fileId = req.params.id;
+    const { fileId, componentName } = req.params;
 
-    const deletedFile = await File.findOneAndDelete(fileId);
-
-    if (!deletedFile) {
-      return res.status(404).json({ message: "File not found" });
+    // Find the form associated with the fileId
+    const form = await Form.findOne({ file: fileId });
+    if (!form) {
+      return res.status(404).json({ message: "Form not found for this file." });
     }
 
-    res.status(200).json({ message: "File deleted successfully", deletedFile });
+    // Check if the component exists as a field in the form
+    if (!(componentName in form)) {
+      return res
+        .status(404)
+        .json({ message: "Component not found in the form." });
+    }
+
+    // Clear the value of the component
+    form[componentName] = undefined; // or set it to null if needed
+    await form.save();
+
+    res.status(200).json({ message: "Component deleted successfully.", form });
   } catch (error) {
-    console.error("Error deleting file:", error);
-    res.status(500).json({ message: "Internal server error" });
+    console.error("Error deleting component:", error);
+    res.status(500).json({ message: "Internal server error." });
   }
 });
+
+// Delete a file by ID
+router.delete("/file/:fileId", authMiddleware, async (req, res) => {
+  const { fileId } = req.params;
+
+  try {
+    const deletedFile = await File.findByIdAndDelete(fileId);
+    if (!deletedFile) {
+      return res.status(404).json({ message: "File not found!" });
+    }
+
+    res.status(200).json({ message: "File deleted successfully!" });
+  } catch (error) {
+    console.error("Error deleting file:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
 // routes/shareableProfile.routes.js
 
 // Create a shareable profile
-router.post("/create", authMiddleware, async (req, res) => {
-  const { profileName } = req.body;
+router.post("/:dashBoardId/shareLink", authMiddleware, async (req, res) => {
+  const { dashBoardId } = req.params;
+  const { role } = req.body;
+
+  if (!["editor", "viewer"].includes(role)) {
+    return res.status(400).json({ message: "Invalid role" });
+  }
 
   try {
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    const dashBoard = await Dashboard.findById(dashBoardId);
 
-    // Create a new shareable profile
-    const newProfile = new ShareableProfile({
-      user: req.user.id,
-      profileName,
-    });
+    if (!dashBoard) {
+      return res.status(404).json({ message: "Dashboard not found!" });
+    }
 
-    await newProfile.save();
-    res.status(201).json({
-      message: "Shareable profile created successfully",
-      profile: newProfile,
+    const linkId = crypto.randomBytes(16).toString("hex");
+    const payload = { dashBoardId, role, linkId, userId: req.user.id };
+    const secureLink = jwt.sign(payload, process.env.JWT_SECRET);
+
+    dashBoard.shareLinks.push({ linkId, secureLink, used: false, role });
+    await dashBoard.save();
+
+    const sharingLink = `http://localhost:5173/dashBoard/${dashBoardId}/access/${linkId}/${secureLink}`;
+
+    return res.status(201).json({
+      message: "Share link created successfully",
+      sharingLink,
     });
-  } catch (error) {
-    console.error(error);
-    res
-      .status(500)
-      .json({ message: "Internal server error", error: error.message });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: "Internal Server Error", error: err });
   }
 });
 
 // Update a shareable profile (add folders/files)
-router.put("/update/:profileId", authMiddleware, async (req, res) => {
-  const { profileId } = req.params;
-  const { folderId, fileId } = req.body;
+router.post("/:dashBoardId/shareEmail", authMiddleware, async (req, res) => {
+  const { dashBoardId } = req.params;
+  const { email, role } = req.body;
+
+  if (!email || !["editor", "viewer"].includes(role)) {
+    return res.status(400).json({ message: "Invalid request!" });
+  }
 
   try {
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    const user = await User.findOne({ email });
 
-    // Find the shareable profile
-    const profile = await ShareableProfile.findById(profileId);
-    if (!profile) return res.status(404).json({ message: "Profile not found" });
-
-    // Ensure that the profile belongs to the current user
-    if (profile.user.toString() !== req.user.id) {
-      return res
-        .status(403)
-        .json({ message: "You are not authorized to update this profile" });
+    if (!user) {
+      return res.status(404).json({ message: "User not found!" });
     }
 
-    // Add folder or file to the profile if they exist
-    if (folderId) {
-      const folder = await Folder.findById(folderId);
-      if (!folder) return res.status(404).json({ message: "Folder not found" });
-      profile.folders.push(folderId);
+    const dashBoard = await Dashboard.findById(dashBoardId);
+
+    if (!dashBoard) {
+      return res.status(404).json({ message: "Dashboard not found!" });
     }
 
-    if (fileId) {
-      const file = await File.findById(fileId);
-      if (!file) return res.status(404).json({ message: "File not found" });
-      profile.files.push(fileId);
+    const existingCollaborator = dashBoard.collaborators.find(
+      (collab) =>
+        collab.user.toString() === user._id.toString() && collab.role === role
+    );
+
+    if (existingCollaborator) {
+      return res.status(400).json({ message: "User already has this role!" });
     }
 
-    await profile.save();
-    res.status(200).json({ message: "Profile updated successfully", profile });
-  } catch (error) {
-    console.error(error);
-    res
-      .status(500)
-      .json({ message: "Internal server error", error: error.message });
+    dashBoard.collaborators.push({ user: user._id, role, accessType: "email" });
+    await dashBoard.save();
+
+    return res.status(200).json({ message: "Email shared successfully!" });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: "Internal Server Error", error: err });
   }
 });
 

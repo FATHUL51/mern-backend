@@ -3,21 +3,37 @@
 const mongoose = require("mongoose");
 
 const ShareableProfileSchema = new mongoose.Schema({
-  user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  folders: [
+  SharebtEmail: [
     {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "folder",
+      user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+      role: {
+        type: String,
+        enum: ["editor", "viewer"],
+        default: "viewer",
+      },
+      accessType: {
+        type: String,
+        enum: ["email", "link"],
+        default: "email",
+      },
     },
   ],
-  files: [
+  sharebyLinks: [
     {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "file",
+      linkId: {
+        type: String,
+        required: true,
+      },
+      role: {
+        type: String,
+        enum: ["editor", "viewer"],
+        required: true,
+      },
     },
   ],
-  isPublic: { type: Boolean, default: false }, // Whether the profile is shareable
-  profileName: { type: String, required: true },
 });
 
 const ShareableProfile = mongoose.model(
