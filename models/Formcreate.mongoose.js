@@ -2,41 +2,18 @@ const mongoose = require("mongoose");
 
 const FormSchema = new mongoose.Schema(
   {
-    formname: {
-      type: String,
-    },
-    bubble_text: {
-      type: String,
-    },
-    text: {
-      type: String,
-    },
-    image: {
-      type: String,
-    },
-    number: {
-      type: Number,
-    },
-    email: {
-      type: String,
-    },
-    phone: {
-      type: String,
-    },
-    date: {
-      type: Date,
-    },
-    rating: {
-      type: Number,
-      enum: [1, 2, 3, 4, 5],
-    },
-    button: {
-      type: String,
-    },
-    file: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "file",
-    },
+    file: { type: mongoose.Schema.Types.ObjectId, ref: "File", required: true },
+    formname: { type: String }, // name of the form
+
+    bubble_text: [{ type: String }], // Array to store multiple bubble_text values
+    text: [{ type: String }], // Array for text inputs
+    image: [{ type: String }], // Array for image inputs
+    number: [{ type: String }], // Array for number inputs
+    email: [{ type: String }],
+    phone: [{ type: String }],
+    rating: [{ type: String }],
+    date: [{ type: String }],
+    button: [{ type: String }],
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "user",

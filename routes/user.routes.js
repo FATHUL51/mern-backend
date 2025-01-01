@@ -1,11 +1,13 @@
 const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middlewares/auth.middleware");
+const validateReplies = require("../middlewares/ValidationReply");
 const Folder = require("../models/Folder.model");
 const File = require("../models/FileCreate.model");
 const Form = require("../models/Formcreate.mongoose");
 const User = require("../models/userCredentials.model");
 const ShareableProfile = require("../models/ShareableProfile.model");
+const Response = require("../models/Responce.model");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const dotenv = require("dotenv");
@@ -209,18 +211,8 @@ router.post("/folder/file", authMiddleware, async (req, res) => {
 });
 
 router.post("/folder/:file/form", authMiddleware, async (req, res) => {
-  const {
-    formname,
-    bubble_text,
-    text,
-    image,
-    number,
-    email,
-    phone,
-    rating,
-    button,
-  } = req.body;
-  const { file } = req.params;
+  const { file } = req.params; // Correct parameter name
+  const formData = req.body;
 
   try {
     // Validate the user
@@ -230,30 +222,49 @@ router.post("/folder/:file/form", authMiddleware, async (req, res) => {
     }
 
     // Validate the file
-    const fileRecord = await File.findOne({ _id: file, user: req.user.id });
-    if (!fileRecord) {
-      return res.status(404).json({ message: "File not found" });
+    const existingFile = await File.findOne({ _id: file, user: req.user.id });
+    if (!existingFile) {
+      return res.status(404).json({ message: "File not found for this user." });
     }
 
-    // Create a new form and associate it with the file
-    const form = await Form.create({
-      formname,
-      bubble_text,
-      text,
-      image,
-      number,
-      email,
-      phone,
-      rating,
-      button,
-      user: req.user.id,
-      file: fileRecord._id, // Linking form to file by file ID
-    });
+    // Check if a form exists for this file
+    let form = await Form.findOne({ file, user: req.user.id });
+    if (form) {
+      // Append new data to the existing form
+      Object.keys(formData).forEach((key) => {
+        if (key === "formname" && Array.isArray(formData[key])) {
+          // Ensure formname is a string
+          form[key] = formData[key].join(", ");
+        } else if (Array.isArray(form[key])) {
+          form[key].push(
+            ...(Array.isArray(formData[key]) ? formData[key] : [formData[key]])
+          );
+        } else {
+          form[key] = formData[key];
+        }
+      });
 
-    res.status(201).json({ message: "Form created successfully", form });
+      // Update the user field (in case it's required for consistency)
+      form.user = req.user.id;
+
+      await form.save();
+    } else {
+      // Create a new form document
+      const sanitizedData = { ...formData };
+
+      // Ensure `formname` is a string
+      if (Array.isArray(sanitizedData.formname)) {
+        sanitizedData.formname = sanitizedData.formname.join(", ");
+      }
+
+      // Include user ID in the form data
+      await Form.create({ file, user: req.user.id, ...sanitizedData });
+    }
+
+    res.status(201).json({ message: "Form saved successfully!" });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Internal server error" });
+    console.error("Error saving form:", error);
+    res.status(500).json({ message: "Internal server error." });
   }
 });
 
@@ -280,6 +291,35 @@ router.get("/folders/file", authMiddleware, async (req, res) => {
   } catch (error) {}
 });
 
+router.get("/folders/:fileId/forms", authMiddleware, async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const userId = req.user.id;
+
+    const file = await File.findOne({ _id: fileId, user: userId });
+
+    if (!file) {
+      return res
+        .status(403)
+        .json({ error: "Access denied. You do not own this file." });
+    }
+
+    // Fetch forms sorted by creation time (latest first)
+    const forms = await Form.find({ file: fileId }).sort({ createdAt: -1 });
+
+    if (!forms || forms.length === 0) {
+      return res.status(404).json({ message: "No form found for this file." });
+    }
+
+    // Get the latest form
+    const latestForm = forms[0];
+
+    res.status(200).json({ form: latestForm });
+  } catch (error) {
+    console.error("Error fetching form:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
 router.get("/folders/:fileId/form", async (req, res) => {
   try {
     const { fileId } = req.params;
@@ -294,13 +334,6 @@ router.get("/folders/:fileId/form", async (req, res) => {
     // Get the latest form
     const latestForm = forms[0];
 
-    // Delete all older forms
-    const oldForms = forms.slice(1); // Exclude the latest form
-    for (const form of oldForms) {
-      await Form.findByIdAndDelete(form._id);
-    }
-
-    // Return the latest form
     res.status(200).json({ form: latestForm });
   } catch (error) {
     console.error("Error fetching form:", error);
@@ -501,6 +534,72 @@ router.delete("/delete/:profileId", authMiddleware, async (req, res) => {
     res
       .status(500)
       .json({ message: "Internal server error", error: error.message });
+  }
+});
+
+//responce
+// Add a reply to a specific user and file session
+router.post("/Formbot/:fileId", async (req, res) => {
+  const { fileId } = req.params;
+  const { bubble_text, image, text, number, email, phone, rating, status } =
+    req.body;
+
+  try {
+    // Create a new response document
+    const newResponse = new Response({
+      fileId,
+      bubble_text: bubble_text || [],
+      image: image || [],
+      text: text || "",
+      number: number || "",
+      email: email || "",
+      phone: phone || "",
+      rating: rating || "",
+      status: status || "incomplete",
+      timestamp: new Date(),
+    });
+
+    // Save the new document to the database
+    const savedResponse = await newResponse.save();
+
+    res
+      .status(201)
+      .json({ message: "Response added successfully!", savedResponse });
+  } catch (error) {
+    console.error("Error saving response:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Get all responses for a file
+// Fetch all responses for a specific file, grouped by user and session
+router.get("/:fileId", async (req, res) => {
+  const { fileId } = req.params;
+  const userId = req.user.id; // Extracted from authMiddleware
+
+  try {
+    // Check if the file belongs to the logged-in user
+    const file = await File.findOne({ _id: fileId, user: userId });
+
+    if (!file) {
+      return res
+        .status(403)
+        .json({ error: "Access denied. You do not own this file." });
+    }
+
+    // Fetch responses for the file
+    const responses = await Response.find({ fileId });
+
+    if (responses.length === 0) {
+      return res
+        .status(404)
+        .json({ error: "No responses found for this file." });
+    }
+
+    res.status(200).json(responses);
+  } catch (error) {
+    console.error("Error fetching responses:", error);
+    res.status(500).json({ error: "Failed to fetch responses." });
   }
 });
 
