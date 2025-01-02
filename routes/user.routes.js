@@ -666,5 +666,105 @@ router.post("/form-status", async (req, res) => {
     res.status(500).json({ message: "Internal server error." });
   }
 });
+//routes to get all the views and form status
+router.get("/page-visit/:formId", authMiddleware, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const { formId } = req.params; // Extract the formId as a string
+    const userId = req.userId; // From auth middleware
+
+    if (!formId) {
+      return res.status(400).json({ message: "formId is required." });
+    }
+
+    // Ensure formId is a valid ObjectId
+    if (!formId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ message: "Invalid formId." });
+    }
+
+    // Validate the file and user relationship
+    const file = await File.find({ _id: formId, user: userId });
+    if (!file) {
+      return res
+        .status(404)
+        .json({ message: "File not found or not accessible." });
+    }
+
+    // Build query for fetching page visits
+    const query = { fileId: formId };
+    if (startDate || endDate) {
+      query.timestamp = {};
+      if (startDate) query.timestamp.$gte = new Date(startDate);
+      if (endDate) query.timestamp.$lte = new Date(endDate);
+    }
+
+    // Fetch page visits
+    const pageVisits = await PageVisit.find(query);
+    if (!pageVisits.length) {
+      return res
+        .status(404)
+        .json({ message: "No page visits found for this file and user." });
+    }
+
+    res.status(200).json(pageVisits);
+  } catch (error) {
+    console.error("Error fetching page visits:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
+
+// Route to get form statuses
+router.get("/form-status/:fileId", authMiddleware, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const { fileId } = req.params; // Extract query parameters
+    const userId = req.userId; // Retrieved from the auth middleware
+
+    // Validate fileId presence
+    if (!fileId) {
+      return res.status(400).json({ message: "fileId is required." });
+    }
+
+    // Ensure fileId is a valid MongoDB ObjectId
+    if (!fileId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ message: "Invalid fileId." });
+    }
+
+    // Validate the file and user relationship
+    const file = await File.find({ _id: fileId, user: userId });
+    if (!file) {
+      return res
+        .status(404)
+        .json({ message: "File not found or not accessible." });
+    }
+
+    // Construct query for fetching form statuses
+    const query = { fileId };
+    if (startDate || endDate) {
+      query.timestamp = {};
+      if (startDate) query.timestamp.$gte = new Date(startDate); // Start date filter
+      if (endDate) query.timestamp.$lte = new Date(endDate); // End date filter
+    }
+
+    // Fetch form statuses from the database
+    const formStatuses = await FormStatus.find(query);
+
+    // Handle the case where no form statuses are found
+    if (!formStatuses.length) {
+      return res
+        .status(404)
+        .json({ message: "No form statuses found for this file and user." });
+    }
+
+    // Respond with the form statuses
+    res.status(200).json(formStatuses);
+  } catch (error) {
+    // Log the error for debugging purposes
+    console.error("Error fetching form statuses:", error);
+
+    // Respond with a 500 error for unexpected issues
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
 
 module.exports = router;
