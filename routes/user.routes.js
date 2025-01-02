@@ -7,6 +7,7 @@ const File = require("../models/FileCreate.model");
 const Form = require("../models/Formcreate.mongoose");
 const User = require("../models/userCredentials.model");
 const ShareableProfile = require("../models/ShareableProfile.model");
+const { PageVisit, FormStatus } = require("../models/Pagevisit.model");
 const Response = require("../models/Responce.model");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -541,25 +542,53 @@ router.delete("/delete/:profileId", authMiddleware, async (req, res) => {
 // Add a reply to a specific user and file session
 router.post("/Formbot/:fileId", async (req, res) => {
   const { fileId } = req.params;
-  const { bubble_text, image, text, number, email, phone, rating, status } =
-    req.body;
+  const { replies } = req.body; // Expect replies object
 
   try {
-    // Create a new response document
-    const newResponse = new Response({
-      fileId,
-      bubble_text: bubble_text || [],
-      image: image || [],
-      text: text || "",
-      number: number || "",
-      email: email || "",
-      phone: phone || "",
-      rating: rating || "",
-      status: status || "incomplete",
-      timestamp: new Date(),
-    });
+    // Validate replies object
+    if (
+      !replies ||
+      typeof replies !== "object" ||
+      Object.keys(replies).length === 0
+    ) {
+      return res
+        .status(400)
+        .json({ message: "Invalid or missing replies object." });
+    }
 
-    // Save the new document to the database
+    // Create a sanitized response
+    const sanitizedResponse = {
+      fileId,
+      timestamp: new Date(),
+    };
+
+    if (replies.bubble_text && replies.bubble_text.length > 0) {
+      sanitizedResponse.bubble_text = replies.bubble_text;
+    }
+    if (replies.image && replies.image.length > 0) {
+      sanitizedResponse.image = replies.image;
+    }
+    if (replies.text) {
+      sanitizedResponse.text = replies.text.trim();
+    }
+    if (replies.number) {
+      sanitizedResponse.number = replies.number.trim();
+    }
+    if (replies.email) {
+      sanitizedResponse.email = replies.email.trim();
+    }
+    if (replies.phone) {
+      sanitizedResponse.phone = replies.phone.trim();
+    }
+    if (replies.rating) {
+      sanitizedResponse.rating = replies.rating.trim();
+    }
+    if (replies.status) {
+      sanitizedResponse.status = replies.status.trim();
+    }
+
+    // Save the sanitized response
+    const newResponse = new Response(sanitizedResponse);
     const savedResponse = await newResponse.save();
 
     res
@@ -573,7 +602,7 @@ router.post("/Formbot/:fileId", async (req, res) => {
 
 // Get all responses for a file
 // Fetch all responses for a specific file, grouped by user and session
-router.get("/:fileId", async (req, res) => {
+router.get("/:fileId", authMiddleware, async (req, res) => {
   const { fileId } = req.params;
   const userId = req.user.id; // Extracted from authMiddleware
 
@@ -600,6 +629,41 @@ router.get("/:fileId", async (req, res) => {
   } catch (error) {
     console.error("Error fetching responses:", error);
     res.status(500).json({ error: "Failed to fetch responses." });
+  }
+});
+// Update a response
+router.post("/page-visit", async (req, res) => {
+  try {
+    const { fileId, status, timestamp } = req.body;
+
+    if (!fileId || !status || !timestamp) {
+      return res.status(400).json({ message: "Missing required fields." });
+    }
+
+    const pageVisit = new PageVisit({ fileId, status, timestamp });
+    await pageVisit.save();
+
+    res.status(201).json({ message: "Page visit logged successfully." });
+  } catch (error) {
+    console.error("Error logging page visit:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
+router.post("/form-status", async (req, res) => {
+  try {
+    const { fileId, status, timestamp } = req.body;
+
+    if (!fileId || !status || !timestamp) {
+      return res.status(400).json({ message: "Missing required fields." });
+    }
+
+    const formStatus = new FormStatus({ fileId, status, timestamp });
+    await formStatus.save();
+
+    res.status(201).json({ message: "Form status logged successfully." });
+  } catch (error) {
+    console.error("Error logging form status:", error);
+    res.status(500).json({ message: "Internal server error." });
   }
 });
 
